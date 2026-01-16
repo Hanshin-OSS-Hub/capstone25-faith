@@ -124,6 +124,7 @@ Low~Critical 단계에 따른 대응 정책을 설계합니다.
 ---
 
 ## 8. GUI 프로토타입
+![FAITH GUI Prototype](assets/FAITH_GUI.jpg)
 
 ---
 
