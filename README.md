@@ -123,10 +123,6 @@ Low~Critical 단계에 따른 대응 정책을 설계합니다.
 ---
 
 ## 8. GUI 프로토타입
-> 이미지 경로는 repo에 맞게 수정해주세요.
-
-- `docs/gui1.jpg`
-- `docs/gui2.jpg`
 
 ---
 
