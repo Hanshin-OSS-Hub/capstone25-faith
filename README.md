@@ -104,6 +104,7 @@ Low~Critical 단계에 따른 대응 정책을 설계합니다.
 ---
 
 ## 7. 기술 스택
+![FAITH 기술 스택](assets/FAITH_기술스택.png)
 
 ### Backend
 - FastAPI, SQLAlchemy
