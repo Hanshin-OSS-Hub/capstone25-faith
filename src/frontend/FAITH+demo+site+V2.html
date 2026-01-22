@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>콘텐츠 위험도 검증 프로토타입</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        max-width: 800px;
+        margin: 20px auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      section {
+        border: 1px solid #ddd;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+      }
+      h2 {
+        margin-top: 0;
+        color: #333;
+      }
+      .form-group {
+        margin-bottom: 10px;
+      }
+      label {
+        display: inline-block;
+        width: 100px;
+      }
+      input,
+      textarea {
+        width: calc(100% - 110px);
+        padding: 5px;
+      }
+      button {
+        padding: 10px 20px;
+        cursor: pointer;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 10px;
+        overflow-x: auto;
+        font-size: 12px;
+      }
+      .risk-high {
+        color: red;
+        font-weight: bold;
+      }
+      .muted {
+        color: #666;
+        font-size: 12px;
+      }
+      .error {
+        color: #b00020;
+        font-weight: bold;
+      }
+      .ok {
+        color: #0b7a0b;
+        font-weight: bold;
+      }
+      .warn {
+        color: #a06a00;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Risk Analysis Prototype</h1>
+
+    <section id="signup-section">
+      <h2>1. 회원가입 [POST /api/auth/signup]</h2>
+      <div class="form-group">
+        <label>ID:</label> <input type="text" id="reg-id" value="user123" />
+      </div>
+      <div class="form-group">
+        <label>PW:</label>
+        <input type="password" id="reg-pw" value="plain_password" />
+      </div>
+      <div class="form-group">
+        <label>이름:</label> <input type="text" id="reg-name" value="홍길동" />
+      </div>
+      <button onclick="signup()">가입하기</button>
+    </section>
+
+    <section id="login-section">
+      <h2>2. 로그인 [POST /api/auth/login]</h2>
+      <div class="form-group">
+        <label>ID:</label> <input type="text" id="login-id" value="user123" />
+      </div>
+      <div class="form-group">
+        <label>PW:</label>
+        <input type="password" id="login-pw" value="plain_password" />
+      </div>
+      <button onclick="login()">로그인 (JWT 발급)</button>
+      <p>
+        Token: <small id="token-display">없음</small>
+        <span class="muted"
+          >(토큰 있으면 회원 API 사용 / 없으면 비회원 API 사용)</span
+        >
+      </p>
+      <p class="muted">
+        Guest session_id: <span id="session-display"></span>
+        <button
+          onclick="resetSession()"
+          style="margin-left: 8px; background: #6c757d"
+        >
+          세션 새로 만들기
+        </button>
+      </p>
+    </section>
+
+    <section id="verify-section">
+      <h2>
+        3. 텍스트 검증 [회원: POST /api/verify/text | 비회원: POST
+        /api/guest/verify]
+      </h2>
+      <textarea
+        id="text-input"
+        rows="3"
+        placeholder="검증할 텍스트를 입력하세요."
+      >
+정부가 내일부터 현금 인출을 금지한다는 소식입니다.</textarea
+      ><br /><br />
+      <button onclick="verifyText()">검증 요청</button>
+      <span id="loading" class="muted" style="margin-left: 10px"></span>
+    </section>
+
+    <section id="result-section">
+      <h2>검증 결과 (Response)</h2>
+      <div id="result-content"><pre>결과가 여기에 표시됩니다.</pre></div>
+    </section>
+
+    <script>
+      const BASE_URL = "http://localhost:8000"; // 백엔드 주소
+      let accessToken = "";
+
+      // ====== 공통: guest session_id 생성/유지 (계약서: 비회원은 session_id 기반) ======
+      function getOrCreateSessionId() {
+        const key = "guest_session_id";
+        let sid = localStorage.getItem(key);
+        if (!sid) {
+          sid = `guest-${crypto.randomUUID()}`;
+          localStorage.setItem(key, sid);
+        }
+        return sid;
+      }
+
+      function refreshSessionDisplay() {
+        const sid = getOrCreateSessionId();
+        document.getElementById("session-display").innerText = sid;
+      }
+
+      function resetSession() {
+        localStorage.removeItem("guest_session_id");
+        refreshSessionDisplay();
+        alert("게스트 session_id를 새로 만들었어.");
+      }
+
+      refreshSessionDisplay();
+
+      // ====== 공통: fetch 래퍼  ======
+      async function safeFetchJson(url, options) {
+        try {
+          const res = await fetch(url, options);
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : null;
+
+          if (!res.ok) {
+            // 계약서: 공통 에러 응답 포맷
+            const err = data || {
+              error_code: "UNKNOWN_ERROR",
+              message: `HTTP ${res.status}`,
+              detail: null,
+            };
+            err.http_status = res.status;
+            throw err;
+          }
+
+          return data;
+        } catch (e) {
+          // 네트워크 에러/JSON 파싱 에러도 통일
+          if (e && e.error_code) throw e;
+          throw {
+            error_code: "NETWORK_OR_PARSE_ERROR",
+            message: "서버 연결 또는 응답 파싱에 실패했습니다.",
+            detail: String(e),
+          };
+        }
+      }
+
+      function setLoading(isLoading, msg = "") {
+        const el = document.getElementById("loading");
+        el.innerText = isLoading ? msg || "요청 중..." : "";
+      }
+
+      // ====== 1. 회원가입 ======
+      async function signup() {
+        const payload = {
+          login_id: document.getElementById("reg-id").value,
+          password: document.getElementById("reg-pw").value,
+          name: document.getElementById("reg-name").value,
+          phone: "01012345678",
+          email: "user@test.com",
+          gender: "M",
+          birth: "2001-03-15",
+        };
+
+        setLoading(true, "회원가입 중...");
+        try {
+          const data = await safeFetchJson(`${BASE_URL}/api/auth/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          displayResult({ ok: true, mode: "signup", data });
+          alert(`회원가입 결과: ${data.result || "success"}`);
+        } catch (err) {
+          displayError(err);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      // ====== 2. 로그인 (JWT 발급) ======
+      async function login() {
+        const payload = {
+          login_id: document.getElementById("login-id").value,
+          password: document.getElementById("login-pw").value,
+        };
+
+        setLoading(true, "로그인 중...");
+        try {
+          const data = await safeFetchJson(`${BASE_URL}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          // 계약서: {access_token, token_type} :contentReference[oaicite:3]{index=3}
+          if (data && data.access_token) {
+            accessToken = data.access_token;
+            document.getElementById("token-display").innerText =
+              accessToken.substring(0, 30) + "...";
+            alert("로그인 성공");
+            displayResult({ ok: true, mode: "login", data });
+          } else {
+            throw {
+              error_code: "INVALID_LOGIN_RESPONSE",
+              message: "로그인 응답에 access_token이 없습니다.",
+              detail: data,
+            };
+          }
+        } catch (err) {
+          displayError(err);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      // ====== 3. 텍스트 검증 ======
+      async function verifyText() {
+        const content = document.getElementById("text-input").value?.trim();
+        if (!content) {
+          alert("검증할 텍스트를 입력해줘.");
+          return;
+        }
+
+        setLoading(true, "검증 중...");
+
+        try {
+          // 토큰 있으면 회원용 API
+          if (accessToken) {
+            const payload = {
+              input_content: "text",
+              content,
+            };
+
+            const data = await safeFetchJson(`${BASE_URL}/api/verify/text`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken}`, // 계약서: JWT :contentReference[oaicite:4]{index=4}
+              },
+              body: JSON.stringify(payload),
+            });
+
+            displayVerifyResult(data, "member");
+            return;
+          }
+
+          // 토큰 없으면 비회원용 API (계약서: /api/guest/verify, session_id 기반) :contentReference[oaicite:5]{index=5}
+          const guestPayload = {
+            session_id: getOrCreateSessionId(),
+            input_content_type: "text",
+            content,
+          };
+
+          const guestData = await safeFetchJson(
+            `${BASE_URL}/api/guest/verify`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(guestPayload),
+            }
+          );
+
+          displayVerifyResult(guestData, "guest");
+        } catch (err) {
+          // 계약서: 401 토큰 만료/인증 실패, 403 권한 없음 :contentReference[oaicite:6]{index=6}
+          // 회원 요청이 401/403으로 실패하면, UX상 “비회원으로 재시도” 옵션을 줄 수도 있음
+          if (err.http_status === 401 || err.http_status === 403) {
+            // 토큰 문제면 토큰을 비우고 비회원 안내
+            accessToken = "";
+            document.getElementById("token-display").innerText = "없음";
+          }
+          displayError(err);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      // ====== 결과 표시 ======
+      function toRiskLevel(score01) {
+        // 계약서: 0~1 스케일, 구간별 레벨 :contentReference[oaicite:7]{index=7}
+        if (score01 <= 0.25) return "Low";
+        if (score01 <= 0.5) return "Moderate";
+        if (score01 <= 0.75) return "High";
+        return "Critical";
+      }
+
+      function displayVerifyResult(data, mode) {
+        const container = document.getElementById("result-content");
+
+        // 계약서: 회원 응답
+        // { verification_id, final_risk_score, risk_level, risk_summary:[{risk_category, individual_risk_score}] }
+        if (mode === "member") {
+          const riskSummaryHtml = Array.isArray(data.risk_summary)
+            ? data.risk_summary
+                .map(
+                  (r) =>
+                    `<li>${escapeHtml(r.risk_category)}: ${Number(
+                      r.individual_risk_score
+                    ).toFixed(2)}</li>`
+                )
+                .join("")
+            : "<li>(risk_summary 없음)</li>";
+
+          const warningHtml = data.warning_code
+            ? `<p class="warn">⚠️ ${escapeHtml(
+                data.message || "일부 분석이 제한되었습니다."
+              )} (${escapeHtml(data.warning_code)})</p>`
+            : "";
+
+          container.innerHTML = `
+            <p class="ok"> 회원 검증 성공</p>
+            ${warningHtml}
+            <p><strong>검증 ID:</strong> ${escapeHtml(
+              String(data.verification_id)
+            )}</p>
+            <p><strong>최종 위험 점수:</strong> ${Number(
+              data.final_risk_score
+            ).toFixed(2)} (${escapeHtml(data.risk_level)})</p>
+            <p><strong>위험 요약:</strong></p>
+            <ul>${riskSummaryHtml}</ul>
+            <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+          `;
+          return;
+        }
+
+        // 계약서: 비회원 응답 :contentReference[oaicite:9]{index=9}
+        // { risk_score, risk_level, risk_category }
+        if (mode === "guest") {
+          const score = Number(data.risk_score);
+          const level = data.risk_level || toRiskLevel(score);
+
+          container.innerHTML = `
+            <p class="ok"> 비회원 검증 성공</p>
+            <p class="muted">session_id: ${escapeHtml(
+              getOrCreateSessionId()
+            )}</p>
+            <p><strong>위험 점수:</strong> ${
+              isFinite(score)
+                ? score.toFixed(2)
+                : escapeHtml(String(data.risk_score))
+            } (${escapeHtml(level)})</p>
+            <p><strong>주요 카테고리:</strong> ${escapeHtml(
+              String(data.risk_category || "-")
+            )}</p>
+            <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+          `;
+          return;
+        }
+      }
+
+      // ====== 공통 에러 표시 ======
+      function displayError(err) {
+        const container = document.getElementById("result-content");
+        const code = err?.error_code || "UNKNOWN_ERROR";
+        const msg = err?.message || "알 수 없는 오류가 발생했습니다.";
+        const detail = err?.detail ?? null;
+
+        container.innerHTML = `
+          <p><strong>error_code:</strong> ${escapeHtml(String(code))}</p>
+          <p><strong>message:</strong> ${escapeHtml(String(msg))}</p>
+          ${
+            detail !== null
+              ? `<p><strong>detail:</strong></p><pre>${escapeHtml(
+                  typeof detail === "string"
+                    ? detail
+                    : JSON.stringify(detail, null, 2)
+                )}</pre>`
+              : ""
+          }
+        `;
+      }
+
+      // ====== 기타 결과 표시(가입/로그인 등) ======
+      function displayResult({ ok, mode, data }) {
+        const container = document.getElementById("result-content");
+        container.innerHTML = `
+          <p class="${ok ? "ok" : "error"}">${ok ? "O" : "X"} ${escapeHtml(
+          mode
+        )} 결과</p>
+          <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+        `;
+      }
+
+      // ====== XSS 방지용 간단 escape ======
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
