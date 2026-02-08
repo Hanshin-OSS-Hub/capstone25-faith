@@ -76,7 +76,7 @@ Low~Critical 단계에 따른 대응 정책을 설계합니다.
 
 ### 환경
 - Web 기반(브라우저)
-- 백엔드: AWS EC2(Ubuntu 20.04 LTS), FastAPI, PostgreSQL
+- 백엔드: AWS EC2(Ubuntu 20.04 LTS), FastAPI, PostgreSQL, MongoDB, SQLAlchemy
 - 프론트: Next.js, TypeScript
 
 ### 사용성
