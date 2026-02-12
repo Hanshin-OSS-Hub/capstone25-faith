@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAITH 팩트체크 플랫폼</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .risk-circle { transition: stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white border-b border-slate-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-2 cursor-pointer" onclick="showView('home')">
+                    <div class="bg-blue-600 p-1.5 rounded-lg text-white">
+                        <i data-lucide="shield-check"></i>
+                    </div>
+                    <span class="text-2xl font-black tracking-tighter text-blue-600">FAITH</span>
+                </div>
+                <nav class="hidden md:flex space-x-8 text-sm font-semibold text-slate-600">
+                    <button onclick="showView('home')" class="hover:text-blue-600 py-5">홈</button>
+                    <button class="hover:text-blue-600 py-5">팩트체크 리포트</button>
+                    <button class="hover:text-blue-600 py-5">미디어 검증소</button>
+                    <button onclick="showView('about')" class="hover:text-blue-600 py-5">서비스 소개</button>
+                </nav>
+                <div class="hidden md:flex items-center gap-4">
+                    <button class="bg-blue-600 text-white px-5 py-2 rounded-full text-sm font-bold">로그인</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main id="content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <!-- Content injected here -->
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-slate-400 py-16 mt-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center md:text-left">
+            <div class="flex items-center justify-center md:justify-start gap-2 mb-6 text-white font-black text-2xl tracking-tighter">
+                <i data-lucide="shield-check" class="text-blue-500"></i> FAITH
+            </div>
+            <p class="text-sm">© 2025 FAITH Project. 한신대학교 AI·SW 캡스톤디자인.</p>
+        </div>
+    </footer>
+
+    <!-- Error Modal (Custom Alert) -->
+    <div id="errorModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="bg-white p-8 rounded-3xl max-w-sm w-full shadow-2xl animate-fade-in">
+            <div class="text-red-500 mb-4 flex justify-center"><i data-lucide="alert-circle" class="w-12 h-12"></i></div>
+            <h3 id="errorTitle" class="text-xl font-bold text-center mb-2 font-black">분석 실패</h3>
+            <p id="errorMessage" class="text-slate-600 text-center text-sm mb-6">서버와 통신 중 문제가 발생했습니다.</p>
+            <button onclick="closeError()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">확인</button>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration (Based on Specification)
+        const API_BASE_URL = ''; 
+        const AUTH_TOKEN = 'YOUR_BEARER_TOKEN'; 
+
+        // State Management
+        let currentView = 'home';
+        let isAnalyzing = false;
+        let showResult = false;
+        let analysisData = null;
+        let selectedFile = null;
+        let textContent = "";
+
+        function showView(view) {
+            currentView = view;
+            showResult = false;
+            selectedFile = null;
+            textContent = "";
+            render();
+        }
+
+        async function startVerification() {
+            const hasFile = !!selectedFile;
+            const hasText = textContent.trim().length >= 5;
+
+            if (!hasFile && !hasText) {
+                showError('입력 부족', '검증할 텍스트를 5자 이상 입력하거나 파일을 업로드해주세요.');
+                return;
+            }
+
+            isAnalyzing = true;
+            render();
+
+            try {
+                let response;
+                let result;
+
+                if (hasFile) {
+                    // 이미지 검증 (명세서 3-2)
+                    const formData = new FormData();
+                    formData.append('image_file', selectedFile);
+                    formData.append('input_content', 'image');
+                    if (hasText) formData.append('description', textContent);
+
+                    response = await fetch(`${API_BASE_URL}/api/verify/image`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` },
+                        body: formData
+                    });
+                } else {
+                    // 텍스트 검증 (명세서 3-1)
+                    response = await fetch(`${API_BASE_URL}/api/verify/text`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${AUTH_TOKEN}`
+                        },
+                        body: JSON.stringify({
+                            input_content: "text",
+                            content: textContent,
+                            language: "ko"
+                        })
+                    });
+                }
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.message || '분석 중 오류가 발생했습니다.');
+                }
+
+                result = await response.json();
+                
+                // 최신 명세 데이터 매핑
+                analysisData = {
+                    score: result.final_risk_score || 0,
+                    level: result.risk_level || 'Low',
+                    summary: result.risk_summary || [],
+                    predictionId: result.verification_id || 'N/A'
+                };
+
+                showResult = true;
+            } catch (error) {
+                showError('연동 오류', error.message);
+            } finally {
+                isAnalyzing = false;
+                render();
+            }
+        }
+
+        function handleFileSelect(event) {
+            selectedFile = event.target.files[0];
+            render();
+        }
+
+        function showError(title, message) {
+            document.getElementById('errorTitle').innerText = title;
+            document.getElementById('errorMessage').innerText = message;
+            document.getElementById('errorModal').classList.remove('hidden');
+        }
+
+        function closeError() {
+            document.getElementById('errorModal').classList.add('hidden');
+        }
+
+        function render() {
+            const container = document.getElementById('content');
+            container.innerHTML = '';
+
+            if (currentView === 'home') {
+                container.innerHTML = renderHome();
+            } else {
+                container.innerHTML = renderAbout();
+            }
+            lucide.createIcons();
+        }
+
+        function renderHome() {
+            if (isAnalyzing) return renderLoading();
+            if (showResult && analysisData) return renderResult();
+
+            return `
+                <div class="animate-fade-in text-center mb-10">
+                    <h1 class="text-4xl md:text-5xl font-extrabold mb-4 tracking-tight">진실을 분별하는 <span class="text-blue-600">AI의 눈</span></h1>
+                    <p class="text-slate-600 font-medium">리스크 스코어 엔진을 통해 텍스트와 미디어의 신뢰성을 실시간 검증합니다.</p>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 md:p-12 mb-16 max-w-4xl mx-auto">
+                    <!-- Media Upload Section -->
+                    <div class="mb-8">
+                        <label class="border-4 border-dashed border-slate-50 rounded-2xl py-12 cursor-pointer hover:bg-blue-50/50 transition-all group block text-center">
+                            <input type="file" class="hidden" onchange="handleFileSelect(event)">
+                            <div class="${selectedFile ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'} w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                                <i data-lucide="${selectedFile ? 'check-circle' : 'upload'}"></i>
+                            </div>
+                            <h3 class="text-xl font-bold">${selectedFile ? selectedFile.name : '검증할 미디어 업로드'}</h3>
+                            <p class="text-slate-400 text-sm">${selectedFile ? '파일이 선택되었습니다' : '클릭하여 엔진으로 전송할 파일을 선택하세요'}</p>
+                        </label>
+                    </div>
+
+                    <!-- Text Input Section (Added per request) -->
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-2 px-1">
+                            <i data-lucide="align-left" class="w-4 h-4 text-slate-400"></i>
+                            <span class="text-xs font-black text-slate-400 uppercase tracking-widest">Text Content</span>
+                        </div>
+                        <textarea 
+                            oninput="textContent = this.value"
+                            placeholder="분석할 텍스트 내용을 입력하세요 (최소 5자 이상)..."
+                            class="w-full h-32 p-5 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none text-slate-700 font-medium"
+                        >${textContent}</textarea>
+                    </div>
+
+                    <button 
+                        onclick="startVerification()"
+                        class="w-full mt-8 bg-blue-600 text-white py-5 rounded-2xl font-black text-lg hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-2"
+                    >
+                        <i data-lucide="zap" class="w-5 h-5 fill-white"></i> 실시간 분석 시작
+                    </button>
+                </div>
+
+                <section>
+                    <h2 class="text-2xl font-black mb-8 text-slate-800">카테고리별 아카이브</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 text-center">
+                        ${['정치', '경제', '연예', '사회', '기술', '국제'].map(name => `
+                            <div class="bg-white p-6 rounded-2xl border border-slate-100 hover:border-blue-200 cursor-pointer shadow-sm hover:shadow-md transition-all group">
+                                <div class="text-slate-300 mb-3 group-hover:text-blue-500 transition-colors flex justify-center"><i data-lucide="hash"></i></div>
+                                <span class="font-bold text-sm text-slate-700">${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </section>
+            `;
+        }
+
+        function renderLoading() {
+            return `
+                <div class="py-24 text-center animate-fade-in">
+                    <div class="inline-block w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-8"></div>
+                    <h2 class="text-3xl font-black text-slate-900 mb-2">분석 중...</h2>
+                    <p class="text-slate-500">AI 엔진이 조작 흔적과 신뢰도를 측정하고 있습니다.</p>
+                </div>
+            `;
+        }
+
+        function renderResult() {
+            const { score, level, summary, predictionId } = analysisData;
+            const circumference = 2 * Math.PI * 70;
+            const offset = circumference - (score * circumference);
+            
+            // 명세서 기반 컬러 맵
+            const levelColors = {
+                'Critical': 'text-red-500',
+                'High': 'text-orange-500',
+                'Moderate': 'text-amber-500',
+                'Low': 'text-emerald-500'
+            };
+            const strokeColors = {
+                'Critical': '#ef4444',
+                'High': '#f97316',
+                'Moderate': '#f59e0b',
+                'Low': '#10b981'
+            };
+
+            return `
+                <div class="animate-fade-in grid md:grid-cols-12 gap-8 items-start">
+                    <div class="md:col-span-5 bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-xl text-center">
+                        <span class="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-8 block">Risk Score Result</span>
+                        <div class="relative w-48 h-48 mx-auto mb-8">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="96" cy="96" r="70" stroke="#f1f5f9" stroke-width="12" fill="none" />
+                                <circle cx="96" cy="96" r="70" stroke="${strokeColors[level] || '#2563eb'}" stroke-width="12" fill="none" 
+                                    stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" 
+                                    class="risk-circle" stroke-linecap="round" />
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center rotate-90">
+                                <span class="text-5xl font-black text-slate-900">${Math.round(score * 100)}%</span>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase mt-1">Risk</span>
+                            </div>
+                        </div>
+                        <div class="inline-block px-6 py-2 rounded-full bg-slate-50 border border-slate-100">
+                            <span class="text-sm font-black ${levelColors[level] || 'text-blue-600'} uppercase tracking-widest">${level}</span>
+                        </div>
+                        <div class="mt-10 pt-8 border-t border-slate-50">
+                            <p class="text-[10px] font-bold text-slate-300 uppercase mb-4">Verification ID: ${predictionId}</p>
+                            <button onclick="showView('home')" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-sm hover:bg-black transition-all">새로운 검증 시작</button>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-7 space-y-6">
+                        <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                            <h3 class="text-xl font-black mb-6 flex items-center gap-2 italic">
+                                <i data-lucide="activity" class="text-blue-600"></i> Analysis Details
+                            </h3>
+                            <div class="space-y-4">
+                                ${summary.length > 0 ? summary.map(item => `
+                                    <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <span class="font-bold text-slate-700">${item.risk_category}</span>
+                                        <span class="font-black text-blue-600">${Math.round(item.individual_risk_score * 100)}%</span>
+                                    </div>
+                                `).join('') : `
+                                    <p class="text-slate-400 text-sm italic py-4">상세 위험 요소가 탐지되지 않았습니다.</p>
+                                `}
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-blue-600 p-6 rounded-[2rem] text-white">
+                                <span class="text-[10px] font-bold opacity-60 uppercase block mb-1">Method</span>
+                                <span class="font-black">AI 통합 분석</span>
+                            </div>
+                            <div class="bg-white p-6 rounded-[2rem] border border-slate-100">
+                                <span class="text-[10px] font-bold text-slate-300 uppercase block mb-1">Reliability</span>
+                                <span class="font-black text-slate-800">99.4%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAbout() {
+            return `
+                <div class="animate-fade-in space-y-20">
+                    <div class="text-center max-w-2xl mx-auto">
+                        <span class="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 inline-block">ABOUT PROJECT</span>
+                        <h2 class="text-5xl font-black mb-6 text-slate-900 tracking-tight leading-tight">Fact, AI, Truth, and Humanity:<br><span class="text-blue-600">FAITH</span> 플랫폼</h2>
+                        <p class="text-slate-500 text-lg leading-relaxed font-medium">FAITH는 고도화된 AI 리스크 스코어 엔진을 활용하여 디지털 미디어의 신뢰성을 검증하고 사회적 가치를 보호하는 혁신적인 공공 도구입니다.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Initial Render
+        render();
+    </script>
+</body>
+</html>
