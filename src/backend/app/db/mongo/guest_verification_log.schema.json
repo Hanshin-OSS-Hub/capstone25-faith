@@ -1,0 +1,27 @@
+{
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": [
+        "session_id",
+        "input_content_type",
+        "risk_score",
+        "risk_category",
+        "verified_at"
+        ],
+        "properties": {
+        "session_id": { "bsonType": "string" },
+        "input_content_type": {
+            "bsonType": "string",
+            "enum": ["text", "image", "video", "url"]
+        },
+        "content_metadata": { "bsonType": "object" },
+        "risk_score": {
+            "bsonType": "double",
+            "minimum": 0,
+            "maximum": 1
+        },
+        "risk_category": { "bsonType": "string" },
+        "verified_at": { "bsonType": "date" }
+        }
+    }
+}
