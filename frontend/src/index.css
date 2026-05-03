@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* 클래스 기반 다크 모드(html.dark) — 시스템 모드는 JS에서 matchMedia 반영 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+}

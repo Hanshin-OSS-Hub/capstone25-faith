@@ -1,0 +1,24 @@
+.venv/
+
+# 비밀값(.env, .env.local 등)은 무시하되, 예시 템플릿은 커밋함.
+# (.env* 만 쓰면 .env_example 도 같이 무시되므로 아래 ! 로 다시 포함)
+.env*
+!.env.example
+!.env_example
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/*.egg-info/
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Common
+.env
+.DS_Store
+Thumbs.db
